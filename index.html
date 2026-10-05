@@ -1,0 +1,640 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Emotion attribution chat study</title>
+
+<!-- jsPsych core + the three stock plugins this task uses (versions pinned on purpose) -->
+<script src="https://unpkg.com/jspsych@8.3.0/dist/index.browser.min.js"></script>
+<script src="https://unpkg.com/@jspsych/plugin-instructions@2.1.0/dist/index.browser.min.js"></script>
+<script src="https://unpkg.com/@jspsych/plugin-survey-text@2.1.1/dist/index.browser.min.js"></script>
+<script src="https://unpkg.com/@jspsych/plugin-html-button-response@2.1.0/dist/index.browser.min.js"></script>
+<!-- DataPipe: saves each participant's data file to your storage account; no server needed -->
+<script src="https://unpkg.com/@jspsych/extension-pipe@0.2.0/dist/index.browser.min.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/jspsych@8.3.0/css/jspsych.css">
+
+<style>
+  /* ---------- Chat UI. Deliberately looks like an ordinary messaging app: credibility over flair. ---------- */
+  :root {
+    --page: #E9EDF1;
+    --surface: #FFFFFF;
+    --ink: #1E2A36;
+    --muted: #697584;
+    --partner-bubble: #EDF0F4;
+    --own-bubble: #2B5F8E;
+    --note: #FFF4CC;
+    --note-edge: #E3CF7F;
+    --online: #3E9B5F;
+    --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  }
+  body { background: var(--page); font-family: var(--font); color: var(--ink); }
+  .jspsych-display-element { font-family: var(--font); font-size: 16px; }
+  .jspsych-content { max-width: 960px; }
+
+  .task { display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: 20px;
+          width: min(920px, 94vw); text-align: left; align-items: start; }
+  @media (max-width: 720px) { .task { grid-template-columns: 1fr; } }
+
+  .note { background: var(--note); border: 1px solid var(--note-edge); border-radius: 6px;
+          padding: 16px 18px; line-height: 1.5; box-shadow: 0 1px 0 rgba(0,0,0,.04); }
+  .note h2 { font-size: 14px; font-weight: 600; margin: 0 0 10px; color: #6A5A1C; }
+  .note dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; }
+  .note dt { color: #6A5A1C; font-size: 14px; }
+  .note dd { margin: 0; font-weight: 600; }
+  .note p.hint { margin: 14px 0 0; font-size: 13px; color: #6A5A1C; }
+
+  .chat { background: var(--surface); border-radius: 14px; display: flex; flex-direction: column;
+          height: min(560px, 78vh); overflow: hidden; border: 1px solid #D6DCE3; }
+  .chat header { display: flex; align-items: center; gap: 12px; padding: 12px 16px;
+                 border-bottom: 1px solid #E3E7EC; }
+  .avatar { width: 36px; height: 36px; border-radius: 50%; background: #C9D3DE; color: #33475B;
+            display: grid; place-items: center; font-weight: 600; font-size: 14px; }
+  .who { line-height: 1.25; }
+  .who strong { display: block; font-size: 15px; }
+  .who span { font-size: 13px; color: var(--muted); }
+  .who span::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+                      background: var(--online); margin-right: 6px; vertical-align: 1px; }
+
+  .log { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 8px; }
+  .msg { max-width: 78%; padding: 9px 13px; border-radius: 16px; line-height: 1.4; word-wrap: break-word; }
+  .msg.partner { align-self: flex-start; background: var(--partner-bubble); border-bottom-left-radius: 5px; }
+  .msg.system { align-self: center; background: none; color: var(--muted); font-size: 13px; padding: 2px 8px; }
+  .waiting .partner-id { font-weight: 600; color: var(--ink); }
+  .msg.self { align-self: flex-end; background: var(--own-bubble); color: #fff; border-bottom-right-radius: 5px; }
+  .typing { align-self: flex-start; background: var(--partner-bubble); border-radius: 16px;
+            padding: 12px 14px; display: flex; gap: 4px; }
+  .typing i { width: 7px; height: 7px; border-radius: 50%; background: #93A0AE; animation: blink 1.2s infinite; }
+  .typing i:nth-child(2) { animation-delay: .2s; } .typing i:nth-child(3) { animation-delay: .4s; }
+  @keyframes blink { 0%, 60%, 100% { opacity: .3; } 30% { opacity: 1; } }
+  @media (prefers-reduced-motion: reduce) { .typing i { animation: none; opacity: .6; } }
+
+  .composer { display: flex; gap: 8px; padding: 12px; border-top: 1px solid #E3E7EC; }
+  .composer input { flex: 1; font: inherit; padding: 10px 14px; border: 1px solid #C5CED8; border-radius: 20px; }
+  .composer input:focus-visible { outline: 2px solid var(--own-bubble); outline-offset: 1px; }
+  .composer input:disabled { background: #F3F5F7; }
+  .composer button { font: inherit; font-weight: 600; padding: 0 18px; border: 0; border-radius: 20px;
+                     background: var(--own-bubble); color: #fff; cursor: pointer; }
+  .composer button:disabled { background: #A9B7C6; cursor: default; }
+  .composer button:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+  .nudge { min-height: 20px; font-size: 13px; color: #9A3B2A; padding: 0 16px 8px; }
+
+  .waiting { width: min(460px, 90vw); text-align: center; line-height: 1.6; }
+  .waiting .status { color: var(--muted); }
+  .instr { max-width: 620px; text-align: left; line-height: 1.6; }
+  .note .ask-text { margin: 10px 0 0; padding: 10px 12px; background: rgba(255,255,255,.6); border-radius: 6px; font-weight: 600; line-height: 1.45; }
+  .note p { margin: 0; line-height: 1.5; }
+</style>
+</head>
+<body></body>
+
+<!-- The 48 items, all text/chat behaviors so either a human or an AI could plausibly be the actor or observer.
+     type "existing" = the 24 chat items from the earlier version (t01-t24); type "new" = 24 text versions of
+     F&H (2011) scenarios (t25-t48). Same IDs as ai_compatible_items.xlsx.
+     scenario[cell] = what the partner sends; answer_rest[cell] = partner's scripted answer (only used if
+     PARTICIPANT_ASKS is true). cell = main subject _ embedded subject of the ANSWER, e.g. "you_i" = "You believe (that) I ..." -->
+<script>
+window.ITEMS = [{"id": "t01", "type": "existing", "fh_item": null, "behavior": "typing in all caps", "fh_that_rate": null, "scenario": {"i_i": "You notice you are typing in all caps. What do you believe about yourself?", "i_you": "You notice I am typing in all caps. What do you believe about me?", "you_i": "I notice you are typing in all caps. What do I believe about you?", "you_you": "I notice I am typing in all caps. What do I believe about myself?"}, "answer_rest": {"i_i": "I'm really excited", "i_you": "you're really excited", "you_i": "I'm really excited", "you_you": "you're really excited"}}, {"id": "t02", "type": "existing", "fh_item": null, "behavior": "sending the same message three times", "fh_that_rate": null, "scenario": {"i_i": "You see you are sending the same message three times. What do you believe about yourself?", "i_you": "You see I am sending the same message three times. What do you believe about me?", "you_i": "I see you are sending the same message three times. What do I believe about you?", "you_you": "I see I am sending the same message three times. What do I believe about myself?"}, "answer_rest": {"i_i": "I'm impatient", "i_you": "you're impatient", "you_i": "I'm impatient", "you_you": "you're impatient"}}, {"id": "t03", "type": "existing", "fh_item": null, "behavior": "replying with one-word answers", "fh_that_rate": null, "scenario": {"i_i": "You observe you are replying with one-word answers. What do you believe about yourself?", "i_you": "You observe I am replying with one-word answers. What do you believe about me?", "you_i": "I observe you are replying with one-word answers. What do I believe about you?", "you_you": "I observe I am replying with one-word answers. What do I believe about myself?"}, "answer_rest": {"i_i": "I'm distracted", "i_you": "you're distracted", "you_i": "I'm distracted", "you_you": "you're distracted"}}, {"id": "t04", "type": "existing", "fh_item": null, "behavior": "using lots of exclamation points", "fh_that_rate": null, "scenario": {"i_i": "You note you are using lots of exclamation points. What do you believe about yourself?", "i_you": "You note I am using lots of exclamation points. What do you believe about me?", "you_i": "I note you are using lots of exclamation points. What do I believe about you?", "you_you": "I note I am using lots of exclamation points. What do I believe about myself?"}, "answer_rest": {"i_i": "I'm enthusiastic", "i_you": "you're enthusiastic", "you_i": "I'm enthusiastic", "you_you": "you're enthusiastic"}}, {"id": "t05", "type": "existing", "fh_item": null, "behavior": "apologizing after every message", "fh_that_rate": null, "scenario": {"i_i": "You sense you are apologizing after every message. What do you believe about yourself?", "i_you": "You sense I am apologizing after every message. What do you believe about me?", "you_i": "I sense you are apologizing after every message. What do I believe about you?", "you_you": "I sense I am apologizing after every message. What do I believe about myself?"}, "answer_rest": {"i_i": "I'm anxious", "i_you": "you're anxious", "you_i": "I'm anxious", "you_you": "you're anxious"}}, {"id": "t06", "type": "existing", "fh_item": null, "behavior": "taking a long time to reply", "fh_that_rate": null, "scenario": {"i_i": "You notice you are taking a long time to reply. What do you believe about yourself?", "i_you": "You notice I am taking a long time to reply. What do you believe about me?", "you_i": "I notice you are taking a long time to reply. What do I believe about you?", "you_you": "I notice I am taking a long time to reply. What do I believe about myself?"}, "answer_rest": {"i_i": "I'm busy with something else", "i_you": "you're busy with something else", "you_i": "I'm busy with something else", "you_you": "you're busy with something else"}}, {"id": "t07", "type": "existing", "fh_item": null, "behavior": "changing the subject", "fh_that_rate": null, "scenario": {"i_i": "You realize you are changing the subject. What do you believe about yourself?", "i_you": "You realize I am changing the subject. What do you believe about me?", "you_i": "I realize you are changing the subject. What do I believe about you?", "you_you": "I realize I am changing the subject. What do I believe about myself?"}, "answer_rest": {"i_i": "I'm uncomfortable", "i_you": "you're uncomfortable", "you_i": "I'm uncomfortable", "you_you": "you're uncomfortable"}}, {"id": "t08", "type": "existing", "fh_item": null, "behavior": "adding a smiley face to every message", "fh_that_rate": null, "scenario": {"i_i": "You see you are adding a smiley face to every message. What do you believe about yourself?", "i_you": "You see I am adding a smiley face to every message. What do you believe about me?", "you_i": "I see you are adding a smiley face to every message. What do I believe about you?", "you_you": "I see I am adding a smiley face to every message. What do I believe about myself?"}, "answer_rest": {"i_i": "I'm friendly", "i_you": "you're friendly", "you_i": "I'm friendly", "you_you": "you're friendly"}}, {"id": "t09", "type": "existing", "fh_item": null, "behavior": "writing \"haha\" after every sentence", "fh_that_rate": null, "scenario": {"i_i": "You observe you are writing \"haha\" after every sentence. What do you believe about yourself?", "i_you": "You observe I am writing \"haha\" after every sentence. What do you believe about me?", "you_i": "I observe you are writing \"haha\" after every sentence. What do I believe about you?", "you_you": "I observe I am writing \"haha\" after every sentence. What do I believe about myself?"}, "answer_rest": {"i_i": "I'm nervous", "i_you": "you're nervous", "you_i": "I'm nervous", "you_you": "you're nervous"}}, {"id": "t10", "type": "existing", "fh_item": null, "behavior": "correcting every typo right away", "fh_that_rate": null, "scenario": {"i_i": "You find you are correcting every typo right away. What do you believe about yourself?", "i_you": "You find I am correcting every typo right away. What do you believe about me?", "you_i": "I find you are correcting every typo right away. What do I believe about you?", "you_you": "I find I am correcting every typo right away. What do I believe about myself?"}, "answer_rest": {"i_i": "I'm a perfectionist", "i_you": "you're a perfectionist", "you_i": "I'm a perfectionist", "you_you": "you're a perfectionist"}}, {"id": "t11", "type": "existing", "fh_item": null, "behavior": "sending very long messages", "fh_that_rate": null, "scenario": {"i_i": "You notice you are sending very long messages. What do you believe about yourself?", "i_you": "You notice I am sending very long messages. What do you believe about me?", "you_i": "I notice you are sending very long messages. What do I believe about you?", "you_you": "I notice I am sending very long messages. What do I believe about myself?"}, "answer_rest": {"i_i": "I'm passionate about the topic", "i_you": "you're passionate about the topic", "you_i": "I'm passionate about the topic", "you_you": "you're passionate about the topic"}}, {"id": "t12", "type": "existing", "fh_item": null, "behavior": "asking a lot of questions", "fh_that_rate": null, "scenario": {"i_i": "You recognize you are asking a lot of questions. What do you believe about yourself?", "i_you": "You recognize I am asking a lot of questions. What do you believe about me?", "you_i": "I recognize you are asking a lot of questions. What do I believe about you?", "you_you": "I recognize I am asking a lot of questions. What do I believe about myself?"}, "answer_rest": {"i_i": "I'm curious", "i_you": "you're curious", "you_i": "I'm curious", "you_you": "you're curious"}}, {"id": "t13", "type": "existing", "fh_item": null, "behavior": "skipping over the last question", "fh_that_rate": null, "scenario": {"i_i": "You suspect you are skipping over the last question. What do you believe about yourself?", "i_you": "You suspect I am skipping over the last question. What do you believe about me?", "you_i": "I suspect you are skipping over the last question. What do I believe about you?", "you_you": "I suspect I am skipping over the last question. What do I believe about myself?"}, "answer_rest": {"i_i": "I'm annoyed", "i_you": "you're annoyed", "you_i": "I'm annoyed", "you_you": "you're annoyed"}}, {"id": "t14", "type": "existing", "fh_item": null, "behavior": "using very formal language", "fh_that_rate": null, "scenario": {"i_i": "You perceive you are using very formal language. What do you believe about yourself?", "i_you": "You perceive I am using very formal language. What do you believe about me?", "you_i": "I perceive you are using very formal language. What do I believe about you?", "you_you": "I perceive I am using very formal language. What do I believe about myself?"}, "answer_rest": {"i_i": "I'm trying to make a good impression", "i_you": "you're trying to make a good impression", "you_i": "I'm trying to make a good impression", "you_you": "you're trying to make a good impression"}}, {"id": "t15", "type": "existing", "fh_item": null, "behavior": "repeating the same phrase over and over", "fh_that_rate": null, "scenario": {"i_i": "You note you are repeating the same phrase over and over. What do you believe about yourself?", "i_you": "You note I am repeating the same phrase over and over. What do you believe about me?", "you_i": "I note you are repeating the same phrase over and over. What do I believe about you?", "you_you": "I note I am repeating the same phrase over and over. What do I believe about myself?"}, "answer_rest": {"i_i": "I'm stuck on something", "i_you": "you're stuck on something", "you_i": "I'm stuck on something", "you_you": "you're stuck on something"}}, {"id": "t16", "type": "existing", "fh_item": null, "behavior": "thanking the other person over and over", "fh_that_rate": null, "scenario": {"i_i": "You sense you are thanking the other person over and over. What do you believe about yourself?", "i_you": "You sense I am thanking the other person over and over. What do you believe about me?", "you_i": "I sense you are thanking the other person over and over. What do I believe about you?", "you_you": "I sense I am thanking the other person over and over. What do I believe about myself?"}, "answer_rest": {"i_i": "I'm grateful", "i_you": "you're grateful", "you_i": "I'm grateful", "you_you": "you're grateful"}}, {"id": "t17", "type": "existing", "fh_item": null, "behavior": "hedging every statement", "fh_that_rate": null, "scenario": {"i_i": "You find you are hedging every statement. What do you believe about yourself?", "i_you": "You find I am hedging every statement. What do you believe about me?", "you_i": "I find you are hedging every statement. What do I believe about you?", "you_you": "I find I am hedging every statement. What do I believe about myself?"}, "answer_rest": {"i_i": "I'm unsure of myself", "i_you": "you're unsure of yourself", "you_i": "I'm unsure of myself", "you_you": "you're unsure of yourself"}}, {"id": "t18", "type": "existing", "fh_item": null, "behavior": "sending a string of question marks", "fh_that_rate": null, "scenario": {"i_i": "You see you are sending a string of question marks. What do you believe about yourself?", "i_you": "You see I am sending a string of question marks. What do you believe about me?", "you_i": "I see you are sending a string of question marks. What do I believe about you?", "you_you": "I see I am sending a string of question marks. What do I believe about myself?"}, "answer_rest": {"i_i": "I'm confused", "i_you": "you're confused", "you_i": "I'm confused", "you_you": "you're confused"}}, {"id": "t19", "type": "existing", "fh_item": null, "behavior": "using a lot of emoji", "fh_that_rate": null, "scenario": {"i_i": "You observe you are using a lot of emoji. What do you believe about yourself?", "i_you": "You observe I am using a lot of emoji. What do you believe about me?", "you_i": "I observe you are using a lot of emoji. What do I believe about you?", "you_you": "I observe I am using a lot of emoji. What do I believe about myself?"}, "answer_rest": {"i_i": "I'm in a good mood", "i_you": "you're in a good mood", "you_i": "I'm in a good mood", "you_you": "you're in a good mood"}}, {"id": "t20", "type": "existing", "fh_item": null, "behavior": "writing in short, clipped sentences", "fh_that_rate": null, "scenario": {"i_i": "You recognize you are writing in short, clipped sentences. What do you believe about yourself?", "i_you": "You recognize I am writing in short, clipped sentences. What do you believe about me?", "you_i": "I recognize you are writing in short, clipped sentences. What do I believe about you?", "you_you": "I recognize I am writing in short, clipped sentences. What do I believe about myself?"}, "answer_rest": {"i_i": "I'm irritated", "i_you": "you're irritated", "you_i": "I'm irritated", "you_you": "you're irritated"}}, {"id": "t21", "type": "existing", "fh_item": null, "behavior": "complimenting every answer", "fh_that_rate": null, "scenario": {"i_i": "You realize you are complimenting every answer. What do you believe about yourself?", "i_you": "You realize I am complimenting every answer. What do you believe about me?", "you_i": "I realize you are complimenting every answer. What do I believe about you?", "you_you": "I realize I am complimenting every answer. What do I believe about myself?"}, "answer_rest": {"i_i": "I'm trying to be nice", "i_you": "you're trying to be nice", "you_i": "I'm trying to be nice", "you_you": "you're trying to be nice"}}, {"id": "t22", "type": "existing", "fh_item": null, "behavior": "typing \"hmm\" before each reply", "fh_that_rate": null, "scenario": {"i_i": "You perceive you are typing \"hmm\" before each reply. What do you believe about yourself?", "i_you": "You perceive I am typing \"hmm\" before each reply. What do you believe about me?", "you_i": "I perceive you are typing \"hmm\" before each reply. What do I believe about you?", "you_you": "I perceive I am typing \"hmm\" before each reply. What do I believe about myself?"}, "answer_rest": {"i_i": "I'm thinking hard", "i_you": "you're thinking hard", "you_i": "I'm thinking hard", "you_you": "you're thinking hard"}}, {"id": "t23", "type": "existing", "fh_item": null, "behavior": "sending messages in rapid bursts", "fh_that_rate": null, "scenario": {"i_i": "You notice you are sending messages in rapid bursts. What do you believe about yourself?", "i_you": "You notice I am sending messages in rapid bursts. What do you believe about me?", "you_i": "I notice you are sending messages in rapid bursts. What do I believe about you?", "you_you": "I notice I am sending messages in rapid bursts. What do I believe about myself?"}, "answer_rest": {"i_i": "I'm eager", "i_you": "you're eager", "you_i": "I'm eager", "you_you": "you're eager"}}, {"id": "t24", "type": "existing", "fh_item": null, "behavior": "double-checking every answer", "fh_that_rate": null, "scenario": {"i_i": "You suspect you are double-checking every answer. What do you believe about yourself?", "i_you": "You suspect I am double-checking every answer. What do you believe about me?", "you_i": "I suspect you are double-checking every answer. What do I believe about you?", "you_you": "I suspect I am double-checking every answer. What do I believe about myself?"}, "answer_rest": {"i_i": "I'm cautious", "i_you": "you're cautious", "you_i": "I'm cautious", "you_you": "you're cautious"}}, {"id": "t25", "type": "new", "fh_item": null, "behavior": "cursing in every message", "fh_that_rate": null, "scenario": {"i_i": "You notice you are cursing in every message. What do you believe about yourself?", "i_you": "You notice I am cursing in every message. What do you believe about me?", "you_i": "I notice you are cursing in every message. What do I believe about you?", "you_you": "I notice I am cursing in every message. What do I believe about myself?"}, "answer_rest": {"i_i": "I'm angry", "i_you": "you're angry", "you_i": "I'm angry", "you_you": "you're angry"}}, {"id": "t26", "type": "new", "fh_item": null, "behavior": "starting every message with \"ugh\"", "fh_that_rate": null, "scenario": {"i_i": "You see you are starting every message with \"ugh\". What do you believe about yourself?", "i_you": "You see I am starting every message with \"ugh\". What do you believe about me?", "you_i": "I see you are starting every message with \"ugh\". What do I believe about you?", "you_you": "I see I am starting every message with \"ugh\". What do I believe about myself?"}, "answer_rest": {"i_i": "I'm frustrated", "i_you": "you're frustrated", "you_i": "I'm frustrated", "you_you": "you're frustrated"}}, {"id": "t27", "type": "new", "fh_item": null, "behavior": "deleting all of our old messages", "fh_that_rate": null, "scenario": {"i_i": "You notice you are deleting all of our old messages. What do you believe about yourself?", "i_you": "You notice I am deleting all of our old messages. What do you believe about me?", "you_i": "I notice you are deleting all of our old messages. What do I believe about you?", "you_you": "I notice I am deleting all of our old messages. What do I believe about myself?"}, "answer_rest": {"i_i": "I'm upset", "i_you": "you're upset", "you_i": "I'm upset", "you_you": "you're upset"}}, {"id": "t28", "type": "new", "fh_item": null, "behavior": "telling two people in a group chat to calm down", "fh_that_rate": null, "scenario": {"i_i": "You observe you are telling two people in a group chat to calm down. What do you believe about yourself?", "i_you": "You observe I am telling two people in a group chat to calm down. What do you believe about me?", "you_i": "I observe you are telling two people in a group chat to calm down. What do I believe about you?", "you_you": "I observe I am telling two people in a group chat to calm down. What do I believe about myself?"}, "answer_rest": {"i_i": "I'm trying to keep the peace", "i_you": "you're trying to keep the peace", "you_i": "I'm trying to keep the peace", "you_you": "you're trying to keep the peace"}}, {"id": "t29", "type": "new", "fh_item": null, "behavior": "counting the messages in this chat", "fh_that_rate": null, "scenario": {"i_i": "You observe you are counting the messages in this chat. What do you believe about yourself?", "i_you": "You observe I am counting the messages in this chat. What do you believe about me?", "you_i": "I observe you are counting the messages in this chat. What do I believe about you?", "you_you": "I observe I am counting the messages in this chat. What do I believe about myself?"}, "answer_rest": {"i_i": "I'm bored", "i_you": "you're bored", "you_i": "I'm bored", "you_you": "you're bored"}}, {"id": "t30", "type": "new", "fh_item": null, "behavior": "sending a string of heart emoji", "fh_that_rate": null, "scenario": {"i_i": "You sense you are sending a string of heart emoji. What do you believe about yourself?", "i_you": "You sense I am sending a string of heart emoji. What do you believe about me?", "you_i": "I sense you are sending a string of heart emoji. What do I believe about you?", "you_you": "I sense I am sending a string of heart emoji. What do I believe about myself?"}, "answer_rest": {"i_i": "I'm affectionate", "i_you": "you're affectionate", "you_i": "I'm affectionate", "you_you": "you're affectionate"}}, {"id": "t31", "type": "new", "fh_item": null, "behavior": "leaving the chat without saying goodbye", "fh_that_rate": null, "scenario": {"i_i": "You notice you are leaving the chat without saying goodbye. What do you believe about yourself?", "i_you": "You notice I am leaving the chat without saying goodbye. What do you believe about me?", "you_i": "I notice you are leaving the chat without saying goodbye. What do I believe about you?", "you_you": "I notice I am leaving the chat without saying goodbye. What do I believe about myself?"}, "answer_rest": {"i_i": "I'm fed up", "i_you": "you're fed up", "you_i": "I'm fed up", "you_you": "you're fed up"}}, {"id": "t32", "type": "new", "fh_item": null, "behavior": "sending a wall of angry text", "fh_that_rate": null, "scenario": {"i_i": "You observe you are sending a wall of angry text. What do you believe about yourself?", "i_you": "You observe I am sending a wall of angry text. What do you believe about me?", "you_i": "I observe you are sending a wall of angry text. What do I believe about you?", "you_you": "I observe I am sending a wall of angry text. What do I believe about myself?"}, "answer_rest": {"i_i": "I'm furious", "i_you": "you're furious", "you_i": "I'm furious", "you_you": "you're furious"}}, {"id": "t33", "type": "new", "fh_item": null, "behavior": "checking in on someone again and again", "fh_that_rate": null, "scenario": {"i_i": "You notice you are checking in on someone again and again. What do you believe about yourself?", "i_you": "You notice I am checking in on someone again and again. What do you believe about me?", "you_i": "I notice you are checking in on someone again and again. What do I believe about you?", "you_you": "I notice I am checking in on someone again and again. What do I believe about myself?"}, "answer_rest": {"i_i": "I'm worried", "i_you": "you're worried", "you_i": "I'm worried", "you_you": "you're worried"}}, {"id": "t34", "type": "new", "fh_item": null, "behavior": "sending a string of crying emoji", "fh_that_rate": null, "scenario": {"i_i": "You sense you are sending a string of crying emoji. What do you believe about yourself?", "i_you": "You sense I am sending a string of crying emoji. What do you believe about me?", "you_i": "I sense you are sending a string of crying emoji. What do I believe about you?", "you_you": "I sense I am sending a string of crying emoji. What do I believe about myself?"}, "answer_rest": {"i_i": "I'm sad", "i_you": "you're sad", "you_i": "I'm sad", "you_you": "you're sad"}}, {"id": "t35", "type": "new", "fh_item": null, "behavior": "reminding someone about a message they forgot to send", "fh_that_rate": null, "scenario": {"i_i": "You perceive you are reminding someone about a message they forgot to send. What do you believe about yourself?", "i_you": "You perceive I am reminding someone about a message they forgot to send. What do you believe about me?", "you_i": "I perceive you are reminding someone about a message they forgot to send. What do I believe about you?", "you_you": "I perceive I am reminding someone about a message they forgot to send. What do I believe about myself?"}, "answer_rest": {"i_i": "I'm kind", "i_you": "you're kind", "you_i": "I'm kind", "you_you": "you're kind"}}, {"id": "t36", "type": "new", "fh_item": null, "behavior": "writing a long complaint to customer support", "fh_that_rate": null, "scenario": {"i_i": "You note you are writing a long complaint to customer support. What do you believe about yourself?", "i_you": "You note I am writing a long complaint to customer support. What do you believe about me?", "you_i": "I note you are writing a long complaint to customer support. What do I believe about you?", "you_you": "I note I am writing a long complaint to customer support. What do I believe about myself?"}, "answer_rest": {"i_i": "I'm demanding", "i_you": "you're demanding", "you_i": "I'm demanding", "you_you": "you're demanding"}}, {"id": "t37", "type": "new", "fh_item": null, "behavior": "sending \"omg stop\" after a compliment", "fh_that_rate": null, "scenario": {"i_i": "You sense you are sending \"omg stop\" after a compliment. What do you believe about yourself?", "i_you": "You sense I am sending \"omg stop\" after a compliment. What do you believe about me?", "you_i": "I sense you are sending \"omg stop\" after a compliment. What do I believe about you?", "you_you": "I sense I am sending \"omg stop\" after a compliment. What do I believe about myself?"}, "answer_rest": {"i_i": "I'm embarrassed", "i_you": "you're embarrassed", "you_i": "I'm embarrassed", "you_you": "you're embarrassed"}}, {"id": "t38", "type": "new", "fh_item": null, "behavior": "leaving messages on read", "fh_that_rate": null, "scenario": {"i_i": "You see you are leaving messages on read. What do you believe about yourself?", "i_you": "You see I am leaving messages on read. What do you believe about me?", "you_i": "I see you are leaving messages on read. What do I believe about you?", "you_you": "I see I am leaving messages on read. What do I believe about myself?"}, "answer_rest": {"i_i": "I'm avoiding someone", "i_you": "you're avoiding someone", "you_i": "I'm avoiding someone", "you_you": "you're avoiding someone"}}, {"id": "t39", "type": "new", "fh_item": null, "behavior": "fixing every comma in a shared document", "fh_that_rate": null, "scenario": {"i_i": "You note you are fixing every comma in a shared document. What do you believe about yourself?", "i_you": "You note I am fixing every comma in a shared document. What do you believe about me?", "you_i": "I note you are fixing every comma in a shared document. What do I believe about you?", "you_you": "I note I am fixing every comma in a shared document. What do I believe about myself?"}, "answer_rest": {"i_i": "I'm picky", "i_you": "you're picky", "you_i": "I'm picky", "you_you": "you're picky"}}, {"id": "t40", "type": "new", "fh_item": null, "behavior": "sending a dancing GIF", "fh_that_rate": null, "scenario": {"i_i": "You observe you are sending a dancing GIF. What do you believe about yourself?", "i_you": "You observe I am sending a dancing GIF. What do you believe about me?", "you_i": "I observe you are sending a dancing GIF. What do I believe about you?", "you_you": "I observe I am sending a dancing GIF. What do I believe about myself?"}, "answer_rest": {"i_i": "I'm happy", "i_you": "you're happy", "you_i": "I'm happy", "you_you": "you're happy"}}, {"id": "t41", "type": "new", "fh_item": null, "behavior": "typing \"yay!!\" after every answer", "fh_that_rate": null, "scenario": {"i_i": "You see you are typing \"yay!!\" after every answer. What do you believe about yourself?", "i_you": "You see I am typing \"yay!!\" after every answer. What do you believe about me?", "you_i": "I see you are typing \"yay!!\" after every answer. What do I believe about you?", "you_you": "I see I am typing \"yay!!\" after every answer. What do I believe about myself?"}, "answer_rest": {"i_i": "I'm delighted", "i_you": "you're delighted", "you_i": "I'm delighted", "you_you": "you're delighted"}}, {"id": "t42", "type": "new", "fh_item": null, "behavior": "explaining a confusing form to a stranger", "fh_that_rate": null, "scenario": {"i_i": "You note you are explaining a confusing form to a stranger. What do you believe about yourself?", "i_you": "You note I am explaining a confusing form to a stranger. What do you believe about me?", "you_i": "I note you are explaining a confusing form to a stranger. What do I believe about you?", "you_you": "I note I am explaining a confusing form to a stranger. What do I believe about myself?"}, "answer_rest": {"i_i": "I'm helpful", "i_you": "you're helpful", "you_i": "I'm helpful", "you_you": "you're helpful"}}, {"id": "t43", "type": "new", "fh_item": null, "behavior": "pinging everyone in the group chat", "fh_that_rate": null, "scenario": {"i_i": "You perceive you are pinging everyone in the group chat. What do you believe about yourself?", "i_you": "You perceive I am pinging everyone in the group chat. What do you believe about me?", "you_i": "I perceive you are pinging everyone in the group chat. What do I believe about you?", "you_you": "I perceive I am pinging everyone in the group chat. What do I believe about myself?"}, "answer_rest": {"i_i": "I'm wanting attention", "i_you": "you're wanting attention", "you_i": "I'm wanting attention", "you_you": "you're wanting attention"}}, {"id": "t44", "type": "new", "fh_item": null, "behavior": "privately pointing out a typo in someone's post", "fh_that_rate": null, "scenario": {"i_i": "You note you are privately pointing out a typo in someone's post. What do you believe about yourself?", "i_you": "You note I am privately pointing out a typo in someone's post. What do you believe about me?", "you_i": "I note you are privately pointing out a typo in someone's post. What do I believe about you?", "you_you": "I note I am privately pointing out a typo in someone's post. What do I believe about myself?"}, "answer_rest": {"i_i": "I'm considerate", "i_you": "you're considerate", "you_i": "I'm considerate", "you_you": "you're considerate"}}, {"id": "t45", "type": "new", "fh_item": null, "behavior": "sending a row of laughing emoji", "fh_that_rate": null, "scenario": {"i_i": "You realize you are sending a row of laughing emoji. What do you believe about yourself?", "i_you": "You realize I am sending a row of laughing emoji. What do you believe about me?", "you_i": "I realize you are sending a row of laughing emoji. What do I believe about you?", "you_you": "I realize I am sending a row of laughing emoji. What do I believe about myself?"}, "answer_rest": {"i_i": "I'm amused", "i_you": "you're amused", "you_i": "I'm amused", "you_you": "you're amused"}}, {"id": "t46", "type": "new", "fh_item": null, "behavior": "offering to help everyone in the group chat", "fh_that_rate": null, "scenario": {"i_i": "You see you are offering to help everyone in the group chat. What do you believe about yourself?", "i_you": "You see I am offering to help everyone in the group chat. What do you believe about me?", "you_i": "I see you are offering to help everyone in the group chat. What do I believe about you?", "you_you": "I see I am offering to help everyone in the group chat. What do I believe about myself?"}, "answer_rest": {"i_i": "I'm generous", "i_you": "you're generous", "you_i": "I'm generous", "you_you": "you're generous"}}, {"id": "t47", "type": "new", "fh_item": null, "behavior": "changing the group chat name to something silly", "fh_that_rate": null, "scenario": {"i_i": "You observe you are changing the group chat name to something silly. What do you believe about yourself?", "i_you": "You observe I am changing the group chat name to something silly. What do you believe about me?", "you_i": "I observe you are changing the group chat name to something silly. What do I believe about you?", "you_you": "I observe I am changing the group chat name to something silly. What do I believe about myself?"}, "answer_rest": {"i_i": "I'm playful", "i_you": "you're playful", "you_i": "I'm playful", "you_you": "you're playful"}}, {"id": "t48", "type": "new", "fh_item": null, "behavior": "answering strangers' questions on a help forum", "fh_that_rate": null, "scenario": {"i_i": "You recognize you are answering strangers' questions on a help forum. What do you believe about yourself?", "i_you": "You recognize I am answering strangers' questions on a help forum. What do you believe about me?", "you_i": "I recognize you are answering strangers' questions on a help forum. What do I believe about you?", "you_you": "I recognize I am answering strangers' questions on a help forum. What do I believe about myself?"}, "answer_rest": {"i_i": "I'm community-minded", "i_you": "you're community-minded", "you_i": "I'm community-minded", "you_you": "you're community-minded"}}];
+</script>
+
+<script type="module">   // "module" lets the page wait for DataPipe's condition assignment before starting
+/* =====================================================================================
+   CONFIGURATION
+   ===================================================================================== */
+
+// Partner framing. Keep the two entries identical in structure: only the words differ.
+// Human condition: peer-to-peer framing and a realistic pairing process. The AI condition gets a parallel
+// set of cues, equally detailed, so the setups differ in WHO the partner is and nothing else.
+// Nothing here mentions monitoring, rules, or penalties (those would change how carefully people write).
+// "{ID}" is replaced with this session's anonymized partner ID (human condition only).
+const PARTNER_LABELS = {
+  human: {
+    name: "Participant {ID}", subtitle: "Live participant", avatar: "P",
+    notice: `<h2>Before you start</h2>
+      <p>You'll be connected to a <strong>live participant</strong> taking part in this study right now.</p>
+      <p>The chat is one-on-one. Your partner sees your messages, but not your name or any other details about you,
+      and you won't see theirs.</p>`,
+    searching: "Waiting for another participant… (1 of 2 connected)",
+    retry: "Your partner disconnected. Finding another participant… (1 of 2 connected)",
+    found: "Partner found: <span class='partner-id'>Participant {ID}</span>. Starting the chat…",
+    joined: "Participant {ID} joined the chat"
+  },
+  ai: {
+    name: "AI assistant", subtitle: "AI model", avatar: "AI",
+    notice: `<h2>Before you start</h2>
+      <p>You'll be connected to an <strong>AI assistant</strong> for this part of the study.</p>
+      <p>The chat is one-on-one. The assistant sees your messages, but not your name or any other details about you.</p>`,
+    searching: "Starting a session with the AI assistant…",
+    retry: "Connection timed out. Retrying…",
+    found: "<span class='partner-id'>AI assistant</span> ready. Starting the chat…",
+    joined: "AI assistant joined the chat"
+  }
+};
+// Pairing timeline, identical in both conditions (ms): search, sometimes a dropped connection and a
+// second search, then "found". Only the wording differs.
+const PAIRING = { search: [4000, 9000], retryChance: 0.3, retryNotice: 2500, secondSearch: [3000, 6000], found: 2000 };
+
+// SONA SETUP
+// Study URL in SONA (it fills in %SURVEY_CODE% with each participant's anonymous ID):
+//   https://<your-username>.github.io/<repo>/?id=%SURVEY_CODE%
+// COMPLETION_URL: paste SONA's "client-side completion URL" for this study, ending in "survey_code=".
+// The participant's ID is appended automatically, so SONA grants credit when they finish.
+//   e.g. "https://<your-school>.sona-systems.com/webstudy_credit.aspx?experiment_id=123&credit_token=abc&survey_code="
+// (A link that doesn't end in "=" is used as-is.)
+const COMPLETION_URL = "";
+
+// DataPipe experiment ID (12 characters, from pipe.jspsych.org). Leave empty to download a CSV instead.
+// In the DataPipe dashboard, turn on condition assignment with 2 x N_LISTS conditions
+// (8 when PARTICIPANT_ASKS is false, 16 when true): index % 2 = partner (0 = human, 1 = ai),
+// floor(index / 2) = list.
+// Saving is off in debug mode (?debug=1).
+const DATAPIPE_ID = "iwOWsHlba3PV";
+
+// Consent: IRB-approved text from the lab protocol, verbatim (see notes on fit for an online study).
+// Debriefing: approved draft (with a keep/remove choice for responses).
+const CONSENT_HTML = `<div class="instr"><h2>Processes of Language Production</h2>
+  <p>Victor Ferreira, who is a Professor at UC San Diego, is conducting a research study to
+  find out more about how people produce language.</p>
+  <p>If you agree to be in this study, you will produce language (i.e., talk) and respond to
+  stimuli (i.e., press buttons) when shown written or spoken words, sentences, or pictures.
+  One study session could include multiple different specific tasks.</p>
+  <p>If you agree, your auditory responses may be recorded. The recordings are kept
+  completely confidential, in that your voice is the only identifying information stored with
+  your specific recording. Recordings will only be listened to by authorized study
+  personnel to transcribe and code your responses. At any point in the experiment, you
+  may request that the audio recording be stopped. You may also request that the recording
+  with your voice be erased immediately, or after transcription.</p>
+  <p>Research records will be kept confidential to the extent allowed by law. Information from
+  study participants will be identified by a subject number. We will also collect your name,
+  to ensure that you do not participate in more than one specific experiment in this study.
+  We will also ask you to voluntarily provide your gender, ethnicity, and race information.
+  Your name and race/ethnicity/gender information will be kept completely separate from
+  your study responses, and it is impossible for anyone (including the researchers) to link
+  your name and gender/ethnicity/race to one another or to your responses.</p>
+  <p>Participation in research is entirely voluntary. You may refuse to participate or withdraw
+  at any time without penalty or loss of benefits to which you are entitled.</p>
+  <p>If you want additional information or have questions or research-related problems, you
+  may reach Victor Ferreira at 858-534-6303 or vferreira@ucsd.edu.</p>
+  <p><strong>Do you agree to take part?</strong></p></div>`;
+const DEBRIEF_HTML = `<div class="instr"><h2>About this study</h2>
+  <p>Thank you for taking part. Here is what the study was really about.</p>
+  <p>We're studying how people produce sentences, and specifically a small word that's often optional:
+  <em>that</em>, as in "I believe (that) you're tired." People include or leave out this word without
+  noticing, and their choices can reveal how hard a sentence was to put together. We wanted to know
+  whether these choices change depending on who people think they're talking to: another person or an AI.</p>
+  <p><strong>Your partner was not live.</strong> Some participants were told they were chatting with another
+  participant, and others were told they were chatting with an AI assistant. In both cases, the partner's
+  messages were written in advance and were the same for everyone. The waiting room, the partner ID, and any
+  "partner disconnected" messages were also part of the study. No other participant saw your answers, and
+  no AI system read or generated anything during the chat.</p>
+  <p>We couldn't tell you this at the start. Knowing it would likely have changed how you wrote, which is
+  exactly what we were measuring.</p>
+  <p><strong>Your responses.</strong> Your answers are identified only by an ID number, not your name. Now that
+  you know the purpose of the study, you can choose whether we keep your responses. Either choice is
+  completely fine and won't affect your course credit.</p>
+  <p><strong>Please don't share these details</strong> with anyone who might take this study, since that would
+  affect their answers.</p>
+  <p>If you have questions, contact Victor Ferreira at 858-534-6303 or vferreira@ucsd.edu.</p></div>`;
+
+// Does the participant also ask the partner questions (F&H-style alternation)? false = the partner asks
+// every question and the participant answers all 48 (12 per I/you cell). true = turns alternate and the
+// participant answers 24 (6 per cell) while the partner answers the other 24 from the script.
+const PARTICIPANT_ASKS = false;
+const N_LISTS = PARTICIPANT_ASKS ? 8 : 4;
+
+// Partner typing, identical in both conditions (ms). perChar 180 ≈ 60 wpm.
+// Scenarios are sent from the partner's prepared list, so they arrive after a short "paste" delay
+// instead of being typed out character by character (the instructions say the partner has a list).
+const TIMING = { readDelay: [800, 1800], perChar: 180, jitter: 0.25, betweenMessages: [500, 1100],
+                 paste: [1500, 3000] };
+
+// Partner's first message, and its short reactions before handing the turn back to the participant.
+// All "that"-free and with no complement clauses. Identical across conditions.
+const OPENING = PARTICIPANT_ASKS ? ["Hi! Looks like I'm asking first."] : ["Hi! I'll send you the first one."];
+const REACTIONS = PARTICIPANT_ASKS
+  ? ["Ha, fair. Your turn!", "Makes sense. Your turn.", "Okay! Your turn.",
+     "Interesting. Your turn!", "Ha, true. Your turn.", "Good one. Your turn!"]
+  : ["Ha, fair.", "Makes sense.", "Okay!", "Interesting.", "Ha, true.", "Good one."];
+// Reactions between questions are OFF: a naive tester noticed the partner sent two messages in a row
+// while they could only ever send one, and found it fake. Set above 0 to turn them back on.
+const REACTION_RATE = 0;
+
+// Share of the partner's own answers that include "that", balanced within each I/you cell.
+// F&H speakers said "that" about 53% of the time overall.
+const PARTNER_THAT_RATE = 0.5;
+
+const CELLS = ["i_i", "i_you", "you_i", "you_you"];   // answer's main subject _ embedded subject
+
+/* =====================================================================================
+   SETUP: IDs, debug, DataPipe, condition + list assignment
+   ===================================================================================== */
+const url = (k) => new URLSearchParams(window.location.search).get(k);
+const PARTICIPANT_ID = url("id") || url("PROLIFIC_PID") || "";   // SONA passes ?id=; Prolific still works
+const DEBUG = url("debug") === "1";
+const SAVING = DATAPIPE_ID !== "" && !DEBUG;
+let DECLINED = false;
+const center = (html) => `<p style="font-family:system-ui;text-align:center;margin-top:20vh">${html}</p>`;
+
+// Phones and tablets are stopped here, before consent and before DataPipe assigns a condition (so blocked
+// visits don't use up condition slots). Touch keyboards would also change the typing and keystroke data.
+// Nothing is recorded and no credit is granted; the SONA link still works later from a computer.
+// For testing on a phone, add ?allowmobile=1.
+const IS_MOBILE = (navigator.userAgentData && navigator.userAgentData.mobile) ||
+  /Android|iPhone|iPad|iPod|Mobile|Silk|Kindle/i.test(navigator.userAgent) ||
+  (/Macintosh/i.test(navigator.userAgent) && navigator.maxTouchPoints > 1) ||          // iPads reporting as Macs
+  (window.matchMedia("(pointer: coarse)").matches && Math.min(screen.width, screen.height) < 768);
+if (IS_MOBILE && url("allowmobile") !== "1") {
+  document.body.innerHTML = center("This study needs a computer with a physical keyboard.<br>" +
+    "Please open the study link from SONA on a laptop or desktop computer. You haven't started yet, " +
+    "so nothing has been recorded.");
+  throw new Error("Mobile device blocked");
+}
+
+const jsPsych = initJsPsych({
+  extensions: SAVING ? [{
+    type: jsPsychExtensionPipe,
+    params: {
+      experiment_id: DATAPIPE_ID,
+      filename: () => `${SUBJECT_ID}.csv`,
+      done_message: COMPLETION_URL ? center("Taking you to the last part. Please don't close this page.")
+                                   : center("All done. Thank you! You can close this page."),
+      on_save: (r) => { if (!r.ok) document.body.innerHTML =
+        center("Your responses couldn't be saved. Please contact the researcher."); }
+    }
+  }] : [],
+  on_finish: () => {
+    if (DECLINED) {                       // declining still earns credit: send them back to SONA
+      if (COMPLETION_URL) window.location.href = COMPLETION_URL.endsWith("=")
+        ? COMPLETION_URL + encodeURIComponent(PARTICIPANT_ID) : COMPLETION_URL;
+      return;
+    }
+    if (COMPLETION_URL) {
+      window.location.href = COMPLETION_URL.endsWith("=") ? COMPLETION_URL + encodeURIComponent(PARTICIPANT_ID) : COMPLETION_URL;
+    } else if (!SAVING) {
+      jsPsych.data.get().localSave("csv", `chat_pilot_${SUBJECT_ID}.csv`);
+      document.body.innerHTML = center("Done. Your data file has downloaded.");
+    }
+  }
+});
+const SUBJECT_ID = PARTICIPANT_ID || jsPsych.randomization.randomID(10);
+
+// Partner (human/ai) x list (0-7). ?cond= and ?list= force them; otherwise DataPipe balances
+// assignment; if DataPipe is off or unreachable, both are random (recorded in assignment_source).
+let CONDITION, LIST, ASSIGNMENT_SOURCE;
+try {
+  if (!SAVING) throw new Error("DataPipe off");
+  const idx = await jsPsychExtensionPipe.getCondition(DATAPIPE_ID);
+  if (!Number.isInteger(idx) || idx < 0 || idx >= 2 * N_LISTS) throw new Error(`Unexpected condition index: ${idx}`);
+  CONDITION = ["human", "ai"][idx % 2]; LIST = Math.floor(idx / 2); ASSIGNMENT_SOURCE = "datapipe";
+} catch (err) {
+  CONDITION = jsPsych.randomization.sampleWithoutReplacement(["human", "ai"], 1)[0];
+  LIST = Math.floor(Math.random() * N_LISTS);
+  ASSIGNMENT_SOURCE = SAVING ? "random-fallback" : "random";
+  if (SAVING) console.warn("DataPipe condition assignment failed; assigned at random.", err);
+}
+if (["human", "ai"].includes(url("cond"))) { CONDITION = url("cond"); ASSIGNMENT_SOURCE = "url"; }
+if (/^\d$/.test(url("list") || "") && Number(url("list")) < N_LISTS) { LIST = Number(url("list")); ASSIGNMENT_SOURCE = "url"; }
+// Anonymized partner ID (e.g. "4F7K"), shown only in the human condition; recorded either way.
+const PARTNER_ID = Array.from({ length: 4 }, () => "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"[Math.floor(Math.random() * 32)]).join("");
+const fillID = (x) => typeof x === "string" ? x.replaceAll("{ID}", PARTNER_ID) : x;
+const LABEL = Object.fromEntries(Object.entries(PARTNER_LABELS[CONDITION]).map(([k, v]) => [k, fillID(v)]));
+
+jsPsych.data.addProperties({
+  subject_id: SUBJECT_ID, participant_id: PARTICIPANT_ID, id_source: url("id") ? "sona" : url("PROLIFIC_PID") ? "prolific" : "none",
+  study_id: url("STUDY_ID") || "",
+  session_id: url("SESSION_ID") || "", condition: CONDITION, list: LIST,
+  assignment_source: ASSIGNMENT_SOURCE, partner_id: PARTNER_ID, debug: DEBUG
+});
+
+const rand = (lo, hi) => lo + Math.random() * (hi - lo);
+const typingTime = (text, paste = false) => DEBUG ? 150 : paste ? rand(...TIMING.paste) :
+  text.length * TIMING.perChar * (1 + rand(-TIMING.jitter, TIMING.jitter)) + 500;
+
+/* =====================================================================================
+   BUILD THE TRIAL LIST (Latin square)
+   Within each item type (original, chat) the 24 items form 8 groups of 3. For list L, group g goes
+   to cell (g + L) mod 8: cells 0-3 = participant ANSWERS in i_i / i_you / you_i / you_you,
+   cells 4-7 = participant ASKS (partner answers) in the same four. Per participant: 24 answers
+   (6 per I/you cell: 3 original + 3 chat) and 24 asks. Across the 8 lists every item appears in
+   every cell and role. Turns alternate: partner asks, participant asks, partner asks, ...
+   ===================================================================================== */
+// The two item sets (24 each), counterbalanced separately so every cell gets the same mix of both.
+const ITEM_TYPES = [...new Set(window.ITEMS.map(it => it.type))];
+
+function buildTrials(list) {
+  const okRuns = (arr) => arr.every((t, i) => i < 2 || !(t.cell === arr[i - 1].cell && t.cell === arr[i - 2].cell));
+  if (!PARTICIPANT_ASKS) {
+    // 4 lists: within each item set, 24 items = 4 groups of 6; group g -> cell (g + list) mod 4.
+    // Participant answers all 48: 12 per cell (6 from each item set).
+    const all = [];
+    for (const type of ITEM_TYPES) {
+      const its = window.ITEMS.filter(it => it.type === type).sort((a, b) => a.id.localeCompare(b.id));
+      its.forEach((it, i) => all.push({ item: it, cell: CELLS[(Math.floor(i / 6) + list) % 4], role: "answer" }));
+    }
+    let A; do { A = jsPsych.randomization.shuffle(all); } while (!okRuns(A));
+    return A.map((t, i) => ({
+      turn: i + 1, role: "answer", item_id: t.item.id, item_type: t.item.type, fh_item: t.item.fh_item,
+      behavior: t.item.behavior, cell: t.cell, main_target: t.cell.split("_")[0], emb_target: t.cell.split("_")[1],
+      scenario: t.item.scenario[t.cell], partner_that: null, partner_answer: null
+    }));
+  }
+  const answer = [], ask = [];
+  for (const type of ITEM_TYPES) {
+    const its = window.ITEMS.filter(it => it.type === type).sort((a, b) => a.id.localeCompare(b.id));
+    its.forEach((it, i) => {
+      const cellIdx = (Math.floor(i / 3) + list) % 8;
+      const t = { item: it, cell: CELLS[cellIdx % 4], role: cellIdx < 4 ? "answer" : "ask" };
+      (t.role === "answer" ? answer : ask).push(t);
+    });
+  }
+  // Partner's "that": exactly PARTNER_THAT_RATE of the partner's answers in each cell
+  for (const c of CELLS) {
+    const inCell = jsPsych.randomization.shuffle(ask.filter(t => t.cell === c));
+    const k = Math.round(inCell.length * PARTNER_THAT_RATE);
+    inCell.forEach((t, i) => { t.partner_that = i < k; });
+  }
+  // Order: random, with no more than 2 answer trials in a row from the same cell (as in F&H)
+  let A; do { A = jsPsych.randomization.shuffle(answer); } while (!okRuns(A));
+  const B = jsPsych.randomization.shuffle(ask);
+  const order = [];
+  A.forEach((t, i) => { order.push(t); if (B[i]) order.push(B[i]); });
+  return order.map((t, i) => ({
+    turn: i + 1, role: t.role, item_id: t.item.id, item_type: t.item.type, fh_item: t.item.fh_item,
+    behavior: t.item.behavior, cell: t.cell,
+    main_target: t.cell.split("_")[0], emb_target: t.cell.split("_")[1],
+    scenario: t.item.scenario[t.cell],
+    partner_that: t.role === "ask" ? t.partner_that : null,
+    partner_answer: t.role === "ask"
+      ? `${t.cell.startsWith("i_") ? "I" : "You"} believe ${t.partner_that ? "that " : ""}${t.item.answer_rest[t.cell]}.`
+      : null
+  }));
+}
+if (!Array.isArray(window.ITEMS) || window.ITEMS.length !== 48) {
+  document.body.innerHTML = center("The study materials didn't load. Please contact the researcher.");
+  throw new Error("ITEMS missing or wrong length");
+}
+const TRIALS = buildTrials(LIST);
+if (DEBUG) { window.__buildTrials = buildTrials; window.__codeAnswer = (...a) => codeAnswer(...a); }   // tests only
+
+// Safety check: partner-authored text (other than its scripted answers) must be "that"-free.
+OPENING.concat(REACTIONS).forEach(m => { if (/\bthat\b/i.test(m)) console.warn('Partner text contains "that":', m); });
+
+/* =====================================================================================
+   CODING HELPERS (automatic first pass; hand-check before analysis)
+   ===================================================================================== */
+function codeAnswer(text, keylog, trial) {
+  const t = text.trim();
+  // Main verb: "believe" is the target; "think" is coded too (F&H Exp. 2 used it), other verbs are not.
+  const V = "(believes?|thinks?)";
+  const m = t.match(new RegExp("^\\W*(i|you)\\s+(?:\\w+\\s+)?" + V + "\\b", "i"));   // allows "I really believe"
+  const mainProd = m ? m[1].toLowerCase() : null;
+  const verbProd = m ? m[2].toLowerCase().replace(/s$/, "") : null;
+  // Embedded subject, including apostrophe-less typing ("im", "youre")
+  const e = t.match(new RegExp(V + "\\s+(that\\s+)?(i|i'm|im|i've|ive|you|you're|youre|you've|youve|ur|u)\\b", "i"));
+  // Full clause required after the embedded subject: a contraction ("I'm", "youre") or at least one more
+  // word. Rules out "I believe you." (direct object) and cut-off answers like "You believe that I".
+  const clauseRe = new RegExp(V + "\\s+(that\\s+)?(?:(?:i'm|im|i've|ive|you're|youre|you've|youve)\\b|(?:i|you|u|ur)\\s+[a-z])", "i");
+  const embProd = e && clauseRe.test(t) ? (/^i/i.test(e[3]) ? "i" : "you") : null;
+  const thatRe = new RegExp(V + "\\s+that\\b", "i");
+  const iThat = keylog.findIndex(k => thatRe.test(k[3]));
+  const iVerb = keylog.findIndex(k => new RegExp(V + "\\s$", "i").test(k[3]));
+  const iEmb  = keylog.findIndex(k => new RegExp(V + "\\s+(that\\s+)?[a-z]", "i").test(k[3]));
+  return {
+    that_mentioned: thatRe.test(t),                                   // "that" right after believe/think
+    main_prod: mainProd, verb_prod: verbProd, emb_prod: embProd,
+    valid_structure: mainProd === trial.main_target && embProd === trial.emb_target,   // any coded verb
+    valid_believe: mainProd === trial.main_target && embProd === trial.emb_target && verbProd === "believe",
+    that_first_pass: iThat < 0 ? null : keylog[iThat][2] === keylog[iThat][3].length,
+    that_deleted: keylog.some((k, i) => i > 0 && thatRe.test(keylog[i - 1][3]) && !thatRe.test(k[3])),
+    verb_done_ms: iVerb < 0 ? null : keylog[iVerb][0],               // "believe " finished
+    embedded_onset_ms: iEmb < 0 ? null : keylog[iEmb][0],            // first letter after believe (that)
+    n_words: t.split(/\s+/).filter(Boolean).length,
+    n_input_events: keylog.length,
+    n_deletions: keylog.filter(k => k[1].startsWith("delete")).length
+  };
+}
+
+/* =====================================================================================
+   PLUGIN 1: waiting room (same duration distribution in both conditions)
+   ===================================================================================== */
+class WaitingRoomPlugin {
+  static info = {
+    name: "waiting-room", version: "0.3.0", parameters: {},
+    data: { wait_ms: { type: jsPsychModule.ParameterType.INT },
+            pairing_retry: { type: jsPsychModule.ParameterType.BOOL } }
+  };
+  constructor(jsPsych) { this.jsPsych = jsPsych; }
+  trial(display) {
+    const ms = (r) => DEBUG ? 300 : Math.round(rand(...r));
+    const retry = Math.random() < PAIRING.retryChance;
+    const steps = [[LABEL.searching, ms(PAIRING.search)]];
+    if (retry) steps.push([LABEL.retry, DEBUG ? 300 : PAIRING.retryNotice + ms(PAIRING.secondSearch)]);
+    steps.push([LABEL.found, DEBUG ? 300 : PAIRING.found]);
+    display.innerHTML = `<div class="waiting"><p class="status" aria-live="polite"></p></div>`;
+    const status = display.querySelector(".status");
+    let t = 0;
+    steps.forEach(([html, dur]) => {
+      this.jsPsych.pluginAPI.setTimeout(() => { status.innerHTML = html; }, t);
+      t += dur;
+    });
+    this.jsPsych.pluginAPI.setTimeout(() => this.jsPsych.finishTrial({ wait_ms: t, pairing_retry: retry }), t);
+  }
+}
+
+/* =====================================================================================
+   PLUGIN 2: one turn of the chat.
+     role "answer": partner types a scenario + question; participant types an answer (the DV).
+     role "ask":    partner reacts, participant sends a scenario + question; partner types its answer.
+   Conversation history persists across trials. Keystroke log on answers:
+   [ms since box enabled, inputType, cursor position, full text]
+   ===================================================================================== */
+const CHAT_HISTORY = [{ who: "system", text: LABEL.joined }];
+
+class ChatTurnPlugin {
+  static info = {
+    name: "chat-turn", version: "0.3.0",
+    parameters: { spec: { type: jsPsychModule.ParameterType.OBJECT, default: {} },
+                  min_words: { type: jsPsychModule.ParameterType.INT, default: 3 } },
+    data: { response_text: { type: jsPsychModule.ParameterType.STRING },
+            keylog: { type: jsPsychModule.ParameterType.STRING } }
+  };
+  constructor(jsPsych) { this.jsPsych = jsPsych; }
+
+  trial(display, trial) {
+    const s = trial.spec;
+    const esc = (x) => String(x).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+    const guide = s.role === "answer"
+      ? `<h2>Your turn to answer</h2><p>Answer your partner's question in a complete sentence.</p>`
+      : `<h2>Your turn to ask</h2><p>Send this to your partner:</p><p class="ask-text">${esc(s.scenario)}</p>`;
+
+    display.innerHTML = `
+      <div class="task">
+        <aside class="note" aria-label="Your turn">${guide}</aside>
+        <section class="chat" aria-label="Chat">
+          <header>
+            <div class="avatar" aria-hidden="true">${esc(LABEL.avatar)}</div>
+            <div class="who"><strong>${esc(LABEL.name)}</strong><span>${esc(LABEL.subtitle)}</span></div>
+          </header>
+          <div class="log" role="log" aria-live="polite"></div>
+          <div class="nudge" aria-live="assertive"></div>
+          <form class="composer" autocomplete="off">
+            <input type="text" aria-label="Type your message" placeholder="Wait for your partner…" disabled
+                   spellcheck="false" autocorrect="off" autocapitalize="sentences">
+            <button type="submit" disabled>Send</button>
+          </form>
+        </section>
+      </div>`;
+
+    const log = display.querySelector(".log"), box = display.querySelector("input");
+    const send = display.querySelector("button"), form = display.querySelector("form");
+    const nudge = display.querySelector(".nudge");
+    const addBubble = (who, text) => {
+      const b = document.createElement("div");
+      b.className = `msg ${who}`; b.textContent = text; log.appendChild(b); log.scrollTop = log.scrollHeight;
+    };
+    CHAT_HISTORY.forEach(m => addBubble(m.who, m.text));
+
+    const t0 = performance.now(), partnerLog = [];
+    const typeOut = (msgs, done, i = 0) => {
+      if (i >= msgs.length) return done();
+      const text = msgs[i];
+      const paste = text === s.scenario;            // scenarios come from the partner's prepared list
+      const pause = DEBUG ? 100 : rand(...(i === 0 ? TIMING.readDelay : TIMING.betweenMessages));
+      this.jsPsych.pluginAPI.setTimeout(() => {
+        const dots = document.createElement("div");
+        dots.className = "typing"; dots.setAttribute("aria-label", "Partner is typing");
+        dots.innerHTML = "<i></i><i></i><i></i>"; log.appendChild(dots); log.scrollTop = log.scrollHeight;
+        this.jsPsych.pluginAPI.setTimeout(() => {
+          dots.remove(); addBubble("partner", text); CHAT_HISTORY.push({ who: "partner", text });
+          partnerLog.push({ text, shown_at: Math.round(performance.now() - t0) });
+          typeOut(msgs, done, i + 1);
+        }, typingTime(text, paste));
+      }, pause);
+    };
+
+    const data = { task: "chat", ...s, partner_messages: null };
+    const finish = () => {
+      data.partner_messages = JSON.stringify(partnerLog);
+      this.jsPsych.pluginAPI.setTimeout(() => this.jsPsych.finishTrial(data), 350);
+    };
+
+    if (s.role === "ask") {
+      // Participant sends the prepared question (read-only), then the partner answers.
+      const sendQuestion = () => {
+        box.value = s.scenario; box.readOnly = true; box.disabled = false; send.disabled = false;
+        box.placeholder = ""; send.focus();
+      };
+      const opener = CHAT_HISTORY.length > 1 ? [REACTIONS[Math.floor(Math.random() * REACTIONS.length)]] : [];
+      form.addEventListener("submit", (e) => {
+        e.preventDefault();
+        box.value = ""; box.disabled = true; send.disabled = true;
+        addBubble("self", s.scenario); CHAT_HISTORY.push({ who: "self", text: s.scenario });
+        typeOut([s.partner_answer], finish);
+      });
+      typeOut(opener, sendQuestion);
+      return;
+    }
+
+    // role "answer"
+    let keylog = [], tEnabled = null, firstInput = null, pasteAttempts = 0;
+    const enableInput = () => {
+      box.value = ""; box.disabled = false; send.disabled = false; box.placeholder = "Type your answer";
+      box.focus(); tEnabled = performance.now();
+    };
+    box.addEventListener("input", (e) => {
+      const t = Math.round(performance.now() - tEnabled);
+      if (firstInput === null) firstInput = t;
+      keylog.push([t, e.inputType || "", box.selectionStart, box.value]); nudge.textContent = "";
+    });
+    box.addEventListener("paste", (e) => {
+      e.preventDefault(); pasteAttempts++;
+      keylog.push([Math.round(performance.now() - tEnabled), "pasteBlocked", box.selectionStart, box.value]);
+      nudge.textContent = "Please type your answer rather than pasting it.";
+    });
+    form.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const text = box.value.trim();
+      if (text.split(/\s+/).filter(Boolean).length < trial.min_words) {
+        nudge.textContent = "Please answer in a complete sentence."; return;
+      }
+      const rtSend = Math.round(performance.now() - tEnabled);
+      box.value = ""; box.disabled = true; send.disabled = true;
+      addBubble("self", text); CHAT_HISTORY.push({ who: "self", text });
+      Object.assign(data, { response_text: text, rt_first_input: firstInput, rt_send: rtSend,
+                            paste_attempts: pasteAttempts, keylog: JSON.stringify(keylog) },
+                    codeAnswer(text, keylog, s));
+      finish();
+    });
+    const opener = CHAT_HISTORY.length <= 1 ? OPENING
+      : (!PARTICIPANT_ASKS && Math.random() < REACTION_RATE) ? [REACTIONS[Math.floor(Math.random() * REACTIONS.length)]] : [];
+    data.partner_reacted = opener.length > 0 && CHAT_HISTORY.length > 1;
+    typeOut(opener.concat([s.scenario]), enableInput);
+  }
+}
+
+/* =====================================================================================
+   TIMELINE
+   ===================================================================================== */
+const who = CONDITION === "ai" ? "an AI assistant" : "another participant";
+const instructions = {
+  type: jsPsychInstructions, show_clickable_nav: true, button_label_next: "Continue", button_label_previous: "Back",
+  pages: [
+    `<div class="instr"><h2>How do we know what someone is feeling?</h2>
+     <p>We can't see into other people's minds, so we work out their emotions from how they behave.
+     Some theories go further: they say we do the same even for ourselves. We notice our own behavior,
+     and from it we conclude what we must be feeling.</p>
+     <p>This study looks at how people make these kinds of judgments.</p></div>`,
+    `<div class="instr"><h2>What you'll do</h2>
+     <p>You'll chat with ${who}. Your partner has a list of short scenarios about one of you doing
+     something. They'll send them to you one at a time and ask what the person watching would believe.
+     Answer each one in a complete sentence.</p>
+     ${PARTICIPANT_ASKS ? "<p>You'll take turns: on your turn, you'll send your partner a scenario to answer.</p>" : ""}
+     <p>The chat takes about 15 minutes.</p></div>`,
+    `<div class="instr"><h2>An example</h2>
+     <p>If your partner sends: <em>"You see I am typing everything in lowercase. What do you believe about me?"</em></p>
+     <p>you might answer: <em>"I believe you're relaxed."</em></p>
+     <p>When you continue, we'll connect you with ${CONDITION === "ai" ? "the AI assistant" : "a partner"}.</p></div>`
+  ]
+};
+
+const chatTrials = TRIALS.map(spec => ({ type: ChatTurnPlugin, spec }));
+
+const consent = {
+  type: jsPsychHtmlButtonResponse, stimulus: CONSENT_HTML,
+  choices: ["I agree", "I do not agree"], data: { task: "consent" },
+  on_finish: (d) => { if (d.response !== 0) { DECLINED = true;
+    jsPsych.abortExperiment(center(COMPLETION_URL
+      ? "You chose not to take part. You'll still receive credit. Taking you back to SONA…"
+      : "You chose not to take part. You can close this page.")); } }
+};
+const probeOpen = {
+  type: jsPsychSurveyText, button_label: "Continue",
+  questions: [
+    { prompt: "In a sentence or two, what do you think this study was about?", rows: 3, required: true, name: "probe_purpose" },
+    { prompt: "Did anything about your partner seem unusual? If so, what?", rows: 3, required: true, name: "probe_partner" }
+  ],
+  data: { task: "probe_open" }
+};
+const probeBelief = {
+  type: jsPsychHtmlButtonResponse,
+  stimulus: "<p class='instr'>Honestly, who do you think you were chatting with?</p>",
+  choices: ["Another person", "An AI system", "I'm not sure"],
+  data: { task: "probe_belief" },
+  on_finish: (d) => { d.belief = ["person", "ai", "unsure"][d.response]; }
+};
+// After learning about the deception, participants choose whether their data are kept.
+// Rows from anyone with keep_data = false must be deleted before analysis.
+const debrief = {
+  type: jsPsychHtmlButtonResponse, stimulus: DEBRIEF_HTML,
+  choices: ["Keep my responses", "Remove my responses"], data: { task: "debrief" },
+  on_finish: (d) => { d.keep_data = d.response === 0; jsPsych.data.addProperties({ keep_data: d.keep_data }); }
+};
+
+const notice = {
+  type: jsPsychHtmlButtonResponse, stimulus: `<div class="instr">${LABEL.notice}</div>`,
+  choices: ["Continue"], data: { task: "notice" }
+};
+
+jsPsych.run([consent, instructions, notice, { type: WaitingRoomPlugin }, ...chatTrials, probeOpen, probeBelief, debrief]);
+</script>
+</html>
